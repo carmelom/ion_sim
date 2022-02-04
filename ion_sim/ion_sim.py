@@ -4,6 +4,7 @@ import scipy.optimize
 import scipy.integrate
 import autograd
 import pint
+from tqdm import tqdm
 
 from math import pi as π
 
@@ -268,11 +269,24 @@ class IonSim:
             *x[:self.d, :], x[self.d:, :], t) / self.__m
         return xp.ravel()
 
+    def f_pbar(self, t, x, pbar, state):
+        # https://stackoverflow.com/a/62140877
+        last_t, dt = state
+        n = int((t - last_t) / dt)
+        pbar.update(n)
+        state[0] = last_t + dt * n
+        return self.f(t, x)
+
     def run(self, t, method='RK45'):
         y0 = np.vstack((self.__x0, self.__v0)).ravel()
         self.t = t
-        sol = scipy.integrate.solve_ivp(self.f, self.__t[[0, -1]],
-                                        y0, t_eval=self.__t, method=method)
+        t0, t1 = self.__t[[0, -1]]
+        state = [t0, (t1 - t0) / 1000]
+        with tqdm(total=1000, unit="%") as pbar:
+            sol = scipy.integrate.solve_ivp(self.f_pbar, (t0, t1),
+                                            y0, t_eval=self.__t,
+                                            args=(pbar, state),
+                                            method=method)
         y = np.reshape(sol.y, (2*self.d, -1, len(sol.t)))
         self.__t = sol.t
         self.__x = y[:3, :, :]
